@@ -1,3 +1,4 @@
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~ FIRST APPROACH ON SENTIMENT ANALYSIS
 
 # Downloading ranking of words 
@@ -139,7 +140,7 @@ head(ds_means_norm[!is.na(mean_tot),][order(ds_means_norm[!is.na(mean_tot),mean_
 # Incorporamos el kpi de sentiment analysis creado:
 df$means_tot <- ds_means_norm$mean_tot
 
-# Check if other features are directly related with meanstot
+# Miramos otras variables que sean validas.
 
 head(sort(table(df$screenName), decreasing = T))
 
@@ -154,19 +155,33 @@ ggplot(data = df) +
   geom_density(aes(means_tot, fill = factor(replied)), alpha = 0.3)
 
 ggplot(data = df) +
-  geom_density(aes(means_tot, fill = factor(time)), alpha = 0.3)
+  geom_boxplot(aes(x = factor(time), y = means_tot, color = factor(time)
+               ), alpha = 0.3)
 
 df[retweetCount!= 0,][order(df[retweetCount!= 0,means_tot])]
-df[,rtwct := cut(retweetCount, c(0, 3, 6, 9, Inf), include.lowest = T)]
+
+length(df[retweetCount > 2,retweetCount])
+quantile(df[,retweetCount], c(0.25,0.5,0.75, 0.9, 0.95))
+
+df[,rtwct := cut(retweetCount, c(0,3, 8, 15, Inf), include.lowest = T)]
+
+cor(df[retweetCount < 90 & retweetCount > 2 ,retweetCount], df[retweetCount < 90 & retweetCount > 2  ,means_tot])
 
 ggplot(data = df) +
   geom_density(aes(means_tot, fill = factor(rtwct)), alpha = 0.3)
 
-##  At the moment, we suppose that only meantot is related with cyberbullying
+
+ggplot(data = df) +
+  geom_point(aes(x = retweetCount,y = means_tot, color = rtwct), alpha = 0.3) +
+  scale_x_log10()
+
+##  Asumir que el mean es la única variable que corresponde a un posible cyberbullying
 
 df_neg <- df[means_tot < -1,]
 
 head(sort(table(df$replyToSID), decreasing = T))
+
+df[id %in% replyToSID,]
 
 ggplot(data = df_neg) +
   geom_density(aes(replied))
@@ -174,17 +189,18 @@ ggplot(data = df_neg) +
 ggplot(data = df_neg) +
   geom_density(aes(time), fill = 'blue', alpha = 0.5)
 
-# tweets with the strongest words can be directly related with cyberbullying
 df[grepl('sex', tweet)]
 df[grepl('fuck', tweet)]
 
-# However we see that most of these tweets are porn adds
 col=brewer.pal(8, 'Set1')
 
 text2cloud <- df_neg$tweet
 corp <- Corpus(VectorSource(text2cloud))
 print(wordcloud(corp, max.words=75, random.color=F, 
                 random.order=F, colors=col))
+
+# df_neg$text
+
 
 df_neg[!is.na(means_tot),][order(df_neg[!is.na(means_tot), means_tot]), c('text', 'means_tot'), with = FALSE]
 
@@ -196,3 +212,4 @@ df_pos[means_tot %in% sample(df_pos$means_tot, size = 5), c('text', 'means_tot')
 
 ggplot(data = df) + 
   geom_density(aes(means_tot), fill = 'turquoise', alpha = 0.7)
+
