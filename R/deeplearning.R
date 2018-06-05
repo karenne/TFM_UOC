@@ -1,4 +1,3 @@
-## We try NLP first and CNN second
 
 ## Classifying tweets with deep learning
 
@@ -30,11 +29,30 @@ vocab = create_vocabulary(it_train)
 
 vocab = vocab[vocab$term_count > 1,]
 vectorizer = vocab_vectorizer(vocab)
+
+
+
+
 t1 = Sys.time()
+
 dtm_train = create_dtm(it_train, vectorizer)
+
+
 print(difftime(Sys.time(), t1, units = 'sec'))
 
-dtm_train <- cbind(dtm_train, as.numeric(as.matrix(df_dl[,c(1:4), with = F])))
+
+norm_fun <- function (x) {
+  sigma <- sd(x, na.rm = T)
+  mu <- mean(x, na.rm = T)
+  xnorm <- (x - mu) / sigma
+  return(xnorm)
+}
+
+cols_to_add <- df_dl[,c(1:4), with = F]
+
+cols_to_add <- apply(cols_to_add, 2, function (x) norm_fun(as.numeric(x)))
+
+dtm_train <- cbind(dtm_train, as.numeric(as.matrix(cols_to_add)))
 dim(dtm_train)
 
 ## following tutorial https://www.datacamp.com/community/tutorials/keras-r-deep-learning
@@ -44,11 +62,13 @@ dim(dtm_train)
 require(tensorflow)
 # install_tensorflow()
 require(keras)
+
+# VANILLA NEURAL NETWORK
 model <- keras_model_sequential()
 
 model %>%
   layer_dense(units = 8, activation = 'relu',
-              input_shape = 7667) %>%
+              input_shape = dim(dtm_train)[2]) %>%
   layer_dense(units = 2, activation = 'softmax')
 
 model %>% compile(
@@ -78,8 +98,9 @@ legend("topright", c("train","test"), col=c("blue", "green"), lty=c(1,1))
 
 classes <- model %>% predict_classes(dtm_train, batch_size = 128)
 pred <- cbind(df_dl, classes)
-head(pred[V2 == 1 & is_neg == 0,],10)
-head(pred[V2 == 0 & is_neg == 1,],10)
+head(pred[V2 == 1 & is_neg == 0, tweet],10)
+head(pred[V2 == 0 & is_neg == 1,tweet],10)
+head(pred[V2 == 1 & is_neg == 1,tweet],10)
 
 ### Convolutional networks following https://keras.rstudio.com/articles/examples/cifar10_cnn.html
 
@@ -87,9 +108,9 @@ model <- keras_model_sequential()
 
 model %>%
   # Start with hidden 2D convolutional layer being fed 32x32 pixel images (K: find equivalent for text...)
-  layer_conv_1d(filters = 8, kernel_size = 3,
+  layer_conv_1d(filters = 32, kernel_size = 3,
                 padding = "same",
-              input_shape = c(7667,1)) %>%
+              input_shape = c(dim(dtm_train)[2],1)) %>%
   layer_activation("relu") %>%
 
   # Flatten max filtered output into feature vector
@@ -102,7 +123,7 @@ model %>%
   layer_dense(2) %>%
   layer_activation("softmax")
 
-opt <- optimizer_rmsprop(lr = 0.0001, decay = 1e-6)
+opt <- optimizer_rmsprop(lr = 0.001, decay = 1e-6)
 
 model %>% compile(
   loss = 'categorical_crossentropy',
@@ -134,8 +155,10 @@ classes <- model %>%
                   batch_size = 128)
 
 pred <- cbind(df_dl, classes)
-head(pred[V2 == 1 & is_neg == 0,],10)
-head(pred[V2 == 0 & is_neg == 1,],10)
+
+head(pred[V2 == 1 & is_neg == 0,tweet],10)
+head(pred[V2 == 0 & is_neg == 1,tweet],10)
+head(pred[V2 == 1 & is_neg == 1,tweet],10)
 
 pred[V2 == 1,]
 
