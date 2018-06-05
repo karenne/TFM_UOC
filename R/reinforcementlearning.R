@@ -39,12 +39,26 @@ t1 = Sys.time()
 dtm_train = create_dtm(it_train, vectorizer)
 print(difftime(Sys.time(), t1, units = 'sec'))
 
-dtm_train <- cbind(dtm_train, as.numeric(as.matrix(df_dl[,c(1:4), with = F])))
+
+
+norm_fun <- function (x) {
+  sigma <- sd(x, na.rm = T)
+  mu <- mean(x, na.rm = T)
+  xnorm <- (x - mu) / sigma
+  return(xnorm)
+}
+
+cols_to_add <- df_dl[,c(1:4), with = F]
+
+cols_to_add <- apply(cols_to_add, 2, function (x) norm_fun(as.numeric(x)))
+
+dtm_train <- cbind(dtm_train, as.numeric(as.matrix(cols_to_add)))
 
 val_array <- rep(0, nrow(dtm_train))
-dtm_train2 <- cbind(dtm_train, val_array)
+#dtm_train2 <- cbind(dtm_train, val_array)
 
-dim(dtm_train2)
+#dim(dtm_train2)
+dim(dtm_train)
 
 ### Convolutional networks following https://keras.rstudio.com/articles/examples/cifar10_cnn.html
 require(tensorflow)
@@ -100,12 +114,14 @@ cnn_model <- function (dtm_train, target, epochs){
 # # Add legend
 # legend("topright", c("train","test"), col=c("blue", "green"), lty=c(1,1))
 
-model <- cnn_model(dtm_train2, df_dl$is_neg, epochs = 1)
+
+target = df_dl[, c('text', 'is_neg'), with = FALSE]
+model <- cnn_model(dtm_train, target$is_neg, epochs = 1)
 classes <- model %>%
-  predict_classes(array(dtm_train2, dim = c(dim(dtm_train2),1)),
+  predict_classes(array(dtm_train, dim = c(dim(dtm_train),1)),
                   batch_size = 128)
 
-pred <- cbind(df_dl, classes)
+pred <- cbind(target, classes)
 
 read_punct <- function(txt)
 { 
@@ -117,17 +133,33 @@ read_punct <- function(txt)
 k = 0
 
 for (pr in sample(pred[V2 == 1 & is_neg == 0,text],5)){
-  k <- k + read_punct(pr)
+  rmark = read_punct(pr)
+  while (is.na(rmark)) rmark = read_punct(pr)
+  k <- k + rmark
+  
+  if (rmark == 1) {
+    target[text == pr, is_neg := 1]  
+  } else {
+    target[text == pr, is_neg := 0]  
+    }
 }
 
 
 for (pr in sample(pred[V2 == 0 & is_neg == 1,text],5)){
-  k <- k + ifelse(read_punct(pr) == 1, 0, 1)
+  rmark = read_punct(pr)
+  while (is.na(rmark)) rmark = read_punct(pr)
+  k <- k + ifelse(rmark == 1, 0, 1)
+  if (rmark == 1) {
+    target[text == pr, is_neg := 1]  
+  } else {
+    target[text == pr, is_neg := 0]  
+  }
 }
 
-val_array <- df_dl$is_neg * (10 - k)/10 + classes * k/10 
+val_array <- target$is_neg * (10 - k)/10 + classes * k/10 
+target[, is_neg := ifelse(val_array > 0.5, 1, 0)]
 
-n_iter = 10
+n_iter = 9
 i = 1
 ep = 1
 while (i <= n_iter | k == 10) {
@@ -136,27 +168,49 @@ while (i <= n_iter | k == 10) {
     
   } 
   
-    dtm_train2 <- cbind(dtm_train, as.matrix(val_array))
-    model <- cnn_model(dtm_train, df_dl$is_neg, epochs = ep)
+    # dtm_train2 <- cbind(dtm_train, as.matrix(val_array))
+    model <- cnn_model(dtm_train, target$is_neg, epochs = ep)
     classes <- model %>%
       predict_classes(array(dtm_train, dim = c(dim(dtm_train),1)),
                       batch_size = 128)
     
-    pred <- cbind(df_dl, classes)
+    pred <- target[,V2 := classes]
+    
+    while (dim(pred[V2 == 0])[1] == 0) {
+      model <- cnn_model(dtm_train, target$is_neg, epochs = ep - 1)
+      classes <- model %>%
+        predict_classes(array(dtm_train, dim = c(dim(dtm_train),1)),
+                        batch_size = 128)
+    
+      pred <- target[,V2 := classes]
+      }
+    
     
     k = 0
     
     for (pr in sample(pred[V2 == 1 & is_neg == 0,text],5)){
-      k <- k + read_punct(pr)
+      rmark = read_punct(pr)
+      k <- k + rmark
+      if (rmark == 1) {
+        target[text == pr, is_neg := 1]  
+      } else {
+        target[text == pr, is_neg := 0]  
+      }
     }
     
     
     for (pr in sample(pred[V2 == 0 & is_neg == 1,text],5)){
-      k <- k + ifelse(read_punct(pr) == 1, 0, 1)
+      rmark = read_punct(pr)
+      k <- k + ifelse(rmark == 1, 0, 1)
+      if (rmark == 1) {
+        target[text == pr, is_neg := 1]  
+      } else {
+        target[text == pr, is_neg := 0]  
+      }
     }
     
     val_array <- val_array * (10 - k)/10 + classes * k/10 
-  
+    target[, is_neg := ifelse(val_array > 0.5, 1, 0)]
   
   i = i + 1 
 }
@@ -164,3 +218,7 @@ while (i <= n_iter | k == 10) {
 
 final_df <- cbind(df_dl, val_array)
 final_df[val_array > 0.9 & is_neg == 0, text]
+final_df[val_array <=0.9 & is_neg == 1, text]
+
+
+sample(final_df[val_array > 0.9, text], 10)
